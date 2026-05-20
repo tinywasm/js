@@ -1,7 +1,14 @@
 package js
 
-type Js struct {}
+// Script representa un fragmento JS producido por un módulo SSR.
+// - Name vacío: Content se acopla al bundle global script.js.
+// - Name no vacío: Content se escribe como /public/<Name> (archivo independiente).
+type Script struct {
+	Name    string // nombre simple ("sw.js"); sin separadores ni path traversal.
+	Content string
+}
 
-func New() *Js {
-    return &Js{}
+// String devuelve el contenido bruto (paridad con tinywasm/css Stylesheet.String()).
+func (s *Script) String() string {
+	return s.Content
 }
