@@ -29,7 +29,7 @@ var goRuntimeSignatures = []string{
 var tinyGoRuntimeSignatures = []string{
 	"runtime.sleepTicks",
 	"runtime.ticks",
-	"tinygo_js",
+	"gojs",
 }
 
 func TestPageBootstrap_IsBundleScript(t *testing.T) {

@@ -133,6 +133,16 @@ func (m Module) RenderJS() []*js.Script {
 }
 ```
 
+## Updating wasm_exec.js
+
+When TinyGo or Go releases a new version:
+
+1. Update `DefaultVersion` in `tinywasm/tinygo/tinygo.go` (for TinyGo).
+   For Go, update the `go` directive in `js/go.mod`.
+2. Run: `go generate ./...`
+3. Run: `go test ./...`   (first run updates assets if generate was skipped; second run must pass)
+4. Publish: `gopush` (tinywasm/tinygo first, then tinywasm/js)
+
 ## Escape hatch
 
 For raw JS snippets (analytics, polyfills, init scripts):

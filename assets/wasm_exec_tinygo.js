@@ -1,9 +1,9 @@
+// @tinygo-version 0.41.1
 // Copyright 2018 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 //
 // This file has been modified for use by the TinyGo compiler.
-// tinygo_js — marker used by tinywasm/js to identify this runtime.
 
 (() => {
 	// Map multiple JavaScript environments to a single common API,
@@ -238,9 +238,11 @@
 			}
 
 			const timeOrigin = Date.now() - performance.now();
+			const wasi_EBADF = 8;
+			const wasi_ENOSYS = 52;
 			this.importObject = {
 				wasi_snapshot_preview1: {
-					// https://github.com/WebAssembly/WASI/blob/main/phases/snapshot/docs.md#fd_write
+					// https://github.com/WebAssembly/WASI/blob/snapshot-01/phases/snapshot/docs.md
 					fd_write: function(fd, iovs_ptr, iovs_len, nwritten_ptr) {
 						let nwritten = 0;
 						if (fd == 1) {
@@ -269,9 +271,13 @@
 						mem().setUint32(nwritten_ptr, nwritten, true);
 						return 0;
 					},
-					fd_close: () => 0,      // dummy
-					fd_fdstat_get: () => 0, // dummy
-					fd_seek: () => 0,       // dummy
+					fd_read: () => wasi_ENOSYS,
+					fd_close: () => wasi_ENOSYS,
+					fd_fdstat_get: () => wasi_ENOSYS,
+					fd_prestat_get: () => wasi_EBADF, // wasi-libc relies on this errno value
+					fd_prestat_dir_name: () => wasi_ENOSYS,
+					fd_seek: () => wasi_ENOSYS,
+					path_open: () => wasi_ENOSYS,
 					proc_exit: (code) => {
 						this.exited = true;
 						this.exitCode = code;
