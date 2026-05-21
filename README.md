@@ -1,58 +1,76 @@
 # tinywasm/js
 
-Minimal API for TinyWASM SSR modules that generate JavaScript fragments. It's the equivalent of `tinywasm/css` but for scripting assets.
+Typed layer for Service Workers and Web Workers in TinyWASM.
 
 ## Purpose
 
-The core `Script` type represents JS code emitted by a module. By returning a `Script`, we allow the asset extractor (`assetmin`) to decide if the content:
-1. Is bundled into the global `script.js` file.
-2. Is written as a standalone file in the public root (ideal for service workers, web workers, etc.).
+Allows SSR modules to declare Service Workers and Web Workers by writing **only typed Go**. `tinywasm/js` provides a minimal JS shim to bridge browser events (FetchEvent, MessageEvent) to Go handlers.
 
 ## API
 
-The package exposes the `Script` struct with two fields:
+### Script
+
+The core `Script` type represents JS code emitted by a module.
 
 ```go
 type Script struct {
-    Name    string // Simple filename for a standalone file.
+    Name    string // Filename for standalone files (e.g., "sw.js"). Empty for bundling.
     Content string // Raw JavaScript code.
 }
-
-func (s *Script) String() string { return s.Content }
 ```
 
-### Rules for `Name`
+### Constructors
 
-- **Empty:** The content of `Content` is automatically bundled into the global JS bundle.
-- **Non-empty:** The content is saved as a file in the public root (`/public/<Name>`). It must be a simple filename, without path separators (`/`, `\`) or path traversals (`..`).
+- `PageBootstrap()`: Main entrypoint for the page.
+- `ServiceWorker(handler ServiceWorkerHandler)`: Registers a service worker.
+- `WebWorker(name string, handler WebWorkerHandler)`: Registers a web worker.
 
-## Usage Example (Service Worker in a PWA)
+### Handlers
 
-In this scenario, a PWA module registers the service worker through a script injected into the global bundle, while the service worker code itself is returned as a separate file to define the correct scope (the root of the site).
+Implement these interfaces to handle events in Go:
 
 ```go
-package pwa
-
-import "github.com/tinywasm/js"
-
-type Module struct{}
-
-// RenderJS exposes the JavaScript fragments.
-func (m Module) RenderJS() []*js.Script {
-	return []*js.Script{
-		{
-			// Bundleable: injected into the global entrypoint.
-			Content: `if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('/sw.js');
-            }`,
-		},
-		{
-			// Standalone file (non-empty Name).
-			Name: "sw.js",
-			Content: `self.addEventListener('fetch', function(event) {
-                console.log('SW fetch:', event.request.url);
-            });`,
-		},
-	}
+type ServiceWorkerHandler interface {
+    OnInstall(ctx context.Context) error
+    OnActivate(ctx context.Context) error
+    OnFetch(ctx context.Context, req *js.Request) (*fetch.Response, error)
 }
+
+type WebWorkerHandler interface {
+    OnMessage(ctx context.Context, msg *js.Message) (*js.Message, error)
+}
+```
+
+## Usage Example
+
+```go
+package mymodule
+
+import (
+    "github.com/tinywasm/js"
+    "github.com/tinywasm/context"
+    "github.com/tinywasm/fetch"
+)
+
+type MySW struct{}
+
+func (h *MySW) OnFetch(ctx context.Context, req *js.Request) (*fetch.Response, error) {
+    // Custom logic in Go
+    return fetch.NewResponse(200, nil, []byte("Hello from SW")), nil
+}
+
+// In your module's RenderJS:
+func (m Module) RenderJS() []*js.Script {
+    return []*js.Script{
+        js.ServiceWorker(&MySW{}),
+    }
+}
+```
+
+## Runtime Selection
+
+The framework needs to know which `wasm_exec.js` to include. This is configured at boot:
+
+```go
+js.SetRuntime(js.RuntimeTinyGo) // or js.RuntimeGo
 ```
