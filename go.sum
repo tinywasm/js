@@ -4,5 +4,3 @@ github.com/tinywasm/fetch v0.1.24 h1:UynB2NPPgYrwcRx6ZujkRUTlfUUkNs60J0O63/1FmAs
 github.com/tinywasm/fetch v0.1.24/go.mod h1:Hx9bkdjC5fcf++EWjHKUzEn2OZpUbfoXNQV8tbdC5SI=
 github.com/tinywasm/fmt v0.23.9 h1:ske2WHTRUJ6igkY8T9cI/zky1XcTRrOYSlbbHNp0UQw=
 github.com/tinywasm/fmt v0.23.9/go.mod h1:L2GCAi6asgytPV6TVvGrRq5Ml+DkUt1Ijo5i/2J1jOY=
-github.com/tinywasm/json v0.5.2 h1:ykHdD2qz2k+6r+trffNIVHfvdS46Ib+/8tSUKXx+EdY=
-github.com/tinywasm/json v0.5.2/go.mod h1:uA5JXnQcz3T5XdKfwFKloZFvfP7TWgas41zmCM57UJU=

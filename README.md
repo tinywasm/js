@@ -1,35 +1,59 @@
 # tinywasm/js
+<img src="docs/img/badges.svg">
 
 Typed layer for Service Workers and Web Workers in TinyWASM.
 
-## Purpose
+> **Write Go. The framework generates the JS shim.**
 
-Allows SSR modules to declare Service Workers and Web Workers by writing **only typed Go**. `tinywasm/js` provides a minimal JS shim to bridge browser events (FetchEvent, MessageEvent) to Go handlers.
+## Overview
+
+`tinywasm/js` is the **only JS API** in the TinyWASM framework — mirroring what `tinywasm/css` does for stylesheets. SSR modules call typed constructors returning `*Script` values with final JS content; `assetmin` writes them to disk without additional coordination.
 
 ## API
 
-### Script
+### Script (v1 escape hatch)
 
-The core `Script` type represents JS code emitted by a module.
+The core `Script` type is available for arbitrary JS snippets:
 
 ```go
 type Script struct {
-    Name    string // Filename for standalone files (e.g., "sw.js"). Empty for bundling.
-    Content string // Raw JavaScript code.
+    Name    string // Empty → bundled into /script.js. Non-empty → standalone /public/<Name>.
+    Content string // Raw JavaScript.
 }
 ```
 
-### Constructors
-
-- `PageBootstrap()`: Main entrypoint for the page.
-- `ServiceWorker(handler ServiceWorkerHandler)`: Registers a service worker.
-- `WebWorker(name string, handler WebWorkerHandler)`: Registers a web worker.
-
-### Handlers
-
-Implement these interfaces to handle events in Go:
+### Runtime configuration (call once at boot)
 
 ```go
+js.SetRuntime(js.RuntimeGo)    // Standard Go compiler
+js.SetRuntime(js.RuntimeTinyGo) // TinyGo compiler (smaller binaries)
+```
+
+`tinywasm/app` calls this automatically when it detects the compiler mode — **user modules never call it directly**.
+
+### Typed constructors (recommended)
+
+```go
+// Bundles wasm_exec.js + WASM bootstrap into /script.js.
+js.PageBootstrap() *Script
+
+// Generates /sw.js with wasm_exec.js + SW event listeners inlined.
+js.ServiceWorker(handler ServiceWorkerHandler) *Script
+
+// Generates /<name> with wasm_exec.js + message listener inlined.
+js.WebWorker(name string, handler WebWorkerHandler) *Script
+```
+
+### Handler interfaces
+
+Implement in Go — the shim bridges browser events to your methods:
+
+```go
+import (
+    "github.com/tinywasm/context" // stdlib context is vetoed in WASM
+    "github.com/tinywasm/fetch"
+)
+
 type ServiceWorkerHandler interface {
     OnInstall(ctx context.Context) error
     OnActivate(ctx context.Context) error
@@ -41,36 +65,94 @@ type WebWorkerHandler interface {
 }
 ```
 
-## Usage Example
+### Event types
+
+```go
+// Request is the inbound FetchEvent intercepted by the SW.
+type Request struct {
+    URL     string
+    Method  string
+    Headers []fetch.Header // {Key, Value string} — no maps
+    Body    []byte
+}
+
+// Message is the postMessage payload for Web Workers.
+type Message struct {
+    Data []byte
+}
+```
+
+## Service Worker example (PWA)
 
 ```go
 package mymodule
 
 import (
-    "github.com/tinywasm/js"
     "github.com/tinywasm/context"
     "github.com/tinywasm/fetch"
+    "github.com/tinywasm/js"
 )
 
-type MySW struct{}
+type CachingSW struct{}
 
-func (h *MySW) OnFetch(ctx context.Context, req *js.Request) (*fetch.Response, error) {
-    // Custom logic in Go
-    return fetch.NewResponse(200, nil, []byte("Hello from SW")), nil
+func (sw *CachingSW) OnInstall(ctx context.Context) error  { return nil }
+func (sw *CachingSW) OnActivate(ctx context.Context) error { return nil }
+
+func (sw *CachingSW) OnFetch(ctx context.Context, req *js.Request) (*fetch.Response, error) {
+    // Only intercept API routes; fall through for statics.
+    body := []byte(`{"cached": true}`)
+    return fetch.NewResponse(200,
+        []fetch.Header{{Key: "Content-Type", Value: "application/json"}},
+        body,
+    ), nil
 }
 
-// In your module's RenderJS:
 func (m Module) RenderJS() []*js.Script {
     return []*js.Script{
-        js.ServiceWorker(&MySW{}),
+        js.PageBootstrap(),          // wasm_exec + bootstrap → bundled in /script.js
+        js.ServiceWorker(&CachingSW{}), // full shim → /sw.js
     }
 }
 ```
 
-## Runtime Selection
-
-The framework needs to know which `wasm_exec.js` to include. This is configured at boot:
+## Web Worker example
 
 ```go
-js.SetRuntime(js.RuntimeTinyGo) // or js.RuntimeGo
+type ParserWorker struct{}
+
+func (w *ParserWorker) OnMessage(ctx context.Context, msg *js.Message) (*js.Message, error) {
+    // Process msg.Data ([]byte) and return result.
+    result := process(msg.Data)
+    return &js.Message{Data: result}, nil
+}
+
+func (m Module) RenderJS() []*js.Script {
+    return []*js.Script{
+        js.WebWorker("parser.worker.js", &ParserWorker{}),
+    }
+}
 ```
+
+## Escape hatch
+
+For raw JS snippets (analytics, polyfills, init scripts):
+
+```go
+// Bundled into /script.js
+&js.Script{Content: "console.log('init')"}
+
+// Written as standalone file
+&js.Script{Name: "analytics.js", Content: analyticsJS}
+```
+
+## Stdlib constraints
+
+`tinywasm/js` compiles to WASM — the Go stdlib is **vetoed** to keep binary size minimal.
+
+| Stdlib (prohibited) | Replacement |
+|---|---|
+| `context` | `github.com/tinywasm/context` |
+| `fmt`, `errors`, `strings`, `strconv`, `path` | `github.com/tinywasm/fmt` |
+| `encoding/json` | `github.com/tinywasm/json` |
+| `time` | `github.com/tinywasm/time` |
+| `map[string]string` (headers) | `[]fetch.Header` |

@@ -6,7 +6,6 @@ import (
 	"syscall/js"
 
 	"github.com/tinywasm/context"
-	"github.com/tinywasm/fetch"
 )
 
 func init() {
