@@ -1,34 +1,34 @@
 # tinywasm/js
 
-API mínima para módulos SSR de TinyWASM que generan fragmentos JavaScript. Es el equivalente a `tinywasm/css` pero para assets de scripting.
+Minimal API for TinyWASM SSR modules that generate JavaScript fragments. It's the equivalent of `tinywasm/css` but for scripting assets.
 
-## Propósito
+## Purpose
 
-El tipo principal `Script` representa código JS emitido por un módulo. Al definir un `Script`, permitimos que el extractor de assets (`assetmin`) decida si el contenido:
-1. Se integra al bundle global (`script.js`).
-2. Se escribe como archivo independiente en el raíz público (ideal para service workers, web workers, etc.).
+The core `Script` type represents JS code emitted by a module. By returning a `Script`, we allow the asset extractor (`assetmin`) to decide if the content:
+1. Is bundled into the global `script.js` file.
+2. Is written as a standalone file in the public root (ideal for service workers, web workers, etc.).
 
 ## API
 
-El paquete expone la estructura `Script` con dos campos:
+The package exposes the `Script` struct with two fields:
 
 ```go
 type Script struct {
-    Name    string // Nombre simple para archivo independiente.
-    Content string // Código JavaScript en crudo.
+    Name    string // Simple filename for a standalone file.
+    Content string // Raw JavaScript code.
 }
 
 func (s *Script) String() string { return s.Content }
 ```
 
-### Reglas para `Name`
+### Rules for `Name`
 
-- **Vacío:** El contenido de `Content` se acopla automáticamente al bundle global.
-- **No vacío:** El contenido se guarda como un archivo en la raíz pública (`/public/<Name>`). Debe ser un nombre de archivo simple, sin separadores de ruta (`/`, `\`) ni path traversal (`..`).
+- **Empty:** The content of `Content` is automatically bundled into the global JS bundle.
+- **Non-empty:** The content is saved as a file in the public root (`/public/<Name>`). It must be a simple filename, without path separators (`/`, `\`) or path traversals (`..`).
 
-## Ejemplo de Uso (Service Worker en PWA)
+## Usage Example (Service Worker in a PWA)
 
-En este escenario, el módulo de PWA registra el service worker a través de un script que se inyecta en el bundle global, mientras que el código del service worker en sí se devuelve como un archivo separado para definir el scope correcto (raíz del sitio).
+In this scenario, a PWA module registers the service worker through a script injected into the global bundle, while the service worker code itself is returned as a separate file to define the correct scope (the root of the site).
 
 ```go
 package pwa
@@ -37,17 +37,17 @@ import "github.com/tinywasm/js"
 
 type Module struct{}
 
-// RenderJS expone los fragmentos de JavaScript.
+// RenderJS exposes the JavaScript fragments.
 func (m Module) RenderJS() []*js.Script {
 	return []*js.Script{
 		{
-			// Bundleable: inyectado en el entrypoint global.
+			// Bundleable: injected into the global entrypoint.
 			Content: `if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('/sw.js');
             }`,
 		},
 		{
-			// Archivo independiente (Name no vacío).
+			// Standalone file (non-empty Name).
 			Name: "sw.js",
 			Content: `self.addEventListener('fetch', function(event) {
                 console.log('SW fetch:', event.request.url);
