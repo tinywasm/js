@@ -105,14 +105,14 @@ func TestWebWorker_UsesGivenName(t *testing.T) {
 
 type nopServiceWorkerHandler struct{}
 
-func (nopServiceWorkerHandler) OnInstall(_ context.Context) error  { return nil }
-func (nopServiceWorkerHandler) OnActivate(_ context.Context) error { return nil }
-func (nopServiceWorkerHandler) OnFetch(_ context.Context, _ *js.Request) (*fetch.Response, error) {
+func (nopServiceWorkerHandler) OnInstall(_ *context.Context) error  { return nil }
+func (nopServiceWorkerHandler) OnActivate(_ *context.Context) error { return nil }
+func (nopServiceWorkerHandler) OnFetch(_ *context.Context, _ *js.Request) (*fetch.Response, error) {
 	return nil, nil
 }
 
 type nopWebWorkerHandler struct{}
 
-func (nopWebWorkerHandler) OnMessage(_ context.Context, _ *js.Message) (*js.Message, error) {
+func (nopWebWorkerHandler) OnMessage(_ *context.Context, _ *js.Message) (*js.Message, error) {
 	return nil, nil
 }

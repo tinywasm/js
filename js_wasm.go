@@ -66,7 +66,6 @@ func swFetch(this js.Value, args []js.Value) any {
 
 func workerMessage(this js.Value, args []js.Value) any {
 	name := args[0].String()
-	data := args[1] // js.Value
 
 	handler, ok := workerHandlers[name]
 	if !ok {
@@ -74,7 +73,7 @@ func workerMessage(this js.Value, args []js.Value) any {
 	}
 
 	msg := &Message{
-		// TODO: convert data to []byte
+		// TODO: convert args[1] (js.Value) to []byte
 	}
 
 	res, err := handler.OnMessage(context.Background(), msg)

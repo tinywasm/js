@@ -47,14 +47,14 @@ type Message struct {
 
 // ServiceWorkerHandler is the logic for SW events.
 type ServiceWorkerHandler interface {
-	OnInstall(ctx context.Context) error
-	OnActivate(ctx context.Context) error
-	OnFetch(ctx context.Context, req *Request) (*fetch.Response, error)
+	OnInstall(ctx *context.Context) error
+	OnActivate(ctx *context.Context) error
+	OnFetch(ctx *context.Context, req *Request) (*fetch.Response, error)
 }
 
 // WebWorkerHandler processes messages received by postMessage.
 type WebWorkerHandler interface {
-	OnMessage(ctx context.Context, msg *Message) (*Message, error)
+	OnMessage(ctx *context.Context, msg *Message) (*Message, error)
 }
 
 // Runtime represents the Go compiler used.
