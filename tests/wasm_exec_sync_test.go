@@ -3,7 +3,6 @@ package js_test
 import (
 	"archive/tar"
 	"compress/gzip"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,24 +45,25 @@ func TestWasmExecTinyGoInSync(t *testing.T) {
 		have = strings.TrimSpace(lines[0][len("// @tinygo-version "):])
 	}
 
-	url := fmt.Sprintf("https://github.com/tinygo-org/tinygo/releases/download/v%s/tinygo%s.linux-amd64.tar.gz", want, want)
+	// If the version already matches → the asset is up to date. No download.
+	if have == want {
+		return
+	}
+
+	// Versions diverge → download and update the asset on disk.
+	url := fmt.Sprintf(
+		"https://github.com/tinygo-org/tinygo/releases/download/v%s/tinygo%s.linux-amd64.tar.gz",
+		want, want,
+	)
 	remoteData, err := downloadAndExtract(url, "tinygo/targets/wasm_exec.js")
 	if err != nil {
 		t.Fatalf("failed to download remote version: %v", err)
 	}
-
-	contentOnly := ""
-	if len(lines) > 1 {
-		contentOnly = lines[1]
+	newContent := fmt.Sprintf("// @tinygo-version %s\n%s", want, string(remoteData))
+	if err := os.WriteFile("../assets/wasm_exec_tinygo.js", []byte(newContent), 0644); err != nil {
+		t.Fatalf("failed to update asset: %v", err)
 	}
-
-	if have != want || hash(contentOnly) != hash(string(remoteData)) {
-		newContent := fmt.Sprintf("// @tinygo-version %s\n%s", want, string(remoteData))
-		if err := os.WriteFile("../assets/wasm_exec_tinygo.js", []byte(newContent), 0644); err != nil {
-			t.Fatalf("failed to update asset: %v", err)
-		}
-		t.Fatalf("wasm_exec_tinygo.js updated %s -> %s. Re-run: gotest ./...", have, want)
-	}
+	t.Fatalf("wasm_exec_tinygo.js updated %s -> %s. Re-run: gotest ./...", have, want)
 }
 
 func TestWasmExecGoInSync(t *testing.T) {
@@ -87,24 +87,22 @@ func TestWasmExecGoInSync(t *testing.T) {
 		have = strings.TrimSpace(lines[0][len("// @go-version "):])
 	}
 
+	// If the version already matches → the asset is up to date. No download.
+	if have == want {
+		return
+	}
+
+	// Versions diverge → download and update.
 	url := fmt.Sprintf("https://go.dev/dl/go%s.src.tar.gz", want)
 	remoteData, err := downloadAndExtract(url, "go/lib/wasm/wasm_exec.js")
 	if err != nil {
 		t.Fatalf("failed to download remote version: %v", err)
 	}
-
-	contentOnly := ""
-	if len(lines) > 1 {
-		contentOnly = lines[1]
+	newContent := fmt.Sprintf("// @go-version %s\n%s", want, string(remoteData))
+	if err := os.WriteFile("../assets/wasm_exec_go.js", []byte(newContent), 0644); err != nil {
+		t.Fatalf("failed to update asset: %v", err)
 	}
-
-	if have != want || hash(contentOnly) != hash(string(remoteData)) {
-		newContent := fmt.Sprintf("// @go-version %s\n%s", want, string(remoteData))
-		if err := os.WriteFile("../assets/wasm_exec_go.js", []byte(newContent), 0644); err != nil {
-			t.Fatalf("failed to update asset: %v", err)
-		}
-		t.Fatalf("wasm_exec_go.js updated %s -> %s. Re-run: gotest ./...", have, want)
-	}
+	t.Fatalf("wasm_exec_go.js updated %s -> %s. Re-run: gotest ./...", have, want)
 }
 
 func getGoVersion() (string, error) {
@@ -119,10 +117,6 @@ func getGoVersion() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("go version not found in go.mod")
-}
-
-func hash(s string) string {
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(s)))
 }
 
 func downloadAndExtract(url, targetPath string) ([]byte, error) {
