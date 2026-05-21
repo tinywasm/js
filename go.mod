@@ -7,3 +7,5 @@ require (
 	github.com/tinywasm/fetch v0.1.24
 	github.com/tinywasm/fmt v0.23.9
 )
+
+require github.com/tinywasm/tinygo v0.0.10

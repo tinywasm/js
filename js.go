@@ -1,3 +1,5 @@
+//go:generate go run scripts/update_wasm_exec.go
+
 package js
 
 import (

@@ -1,135 +1,160 @@
-# PLAN — Sync `wasm_exec.js` embeds with Go and TinyGo versions
+# PLAN — Fix sync tests timeout + publish `tinywasm/js`
 
-## Context
+## Módulo
 
-`tinywasm/js` embeds two JS runtime files in `js/assets/`:
+`github.com/tinywasm/js` — ubicado en `tinywasm/js/`.
 
-| File | Source | Current version |
-|---|---|---|
-| `wasm_exec_go.js` | Go stdlib `misc/wasm/wasm_exec.js` | Go 1.24.x |
-| `wasm_exec_tinygo.js` | TinyGo release `targets/wasm_exec.js` | TinyGo 0.40.1 |
+## Contexto (ya implementado — no repetir)
 
-These files are the JS↔WASM bridge injected into every shim produced by `PageBootstrap()`,
-`ServiceWorker()`, and `WebWorker()`. If the embedded file does not match the compiler
-version used to build `client.wasm`, the WASM binary silently fails in the browser at
-runtime with no compile-time error.
+El paquete está completamente implementado:
 
-`tinywasm/tinygo.DefaultVersion` (currently `"0.40.1"`) is the single source of truth for
-which TinyGo version the framework targets.
+- `Script`, `Request`, `Message`, `Runtime`, `SetRuntime` — en `js.go`.
+- `PageBootstrap()`, `ServiceWorker()`, `WebWorker()` — en `js.go`.
+- Embeds `assets/wasm_exec_go.js` (anotación `// @go-version 1.25.2`) y
+  `assets/wasm_exec_tinygo.js` (anotación `// @tinygo-version 0.41.1`).
+- `scripts/update_wasm_exec.go` + `//go:generate` en `js.go`.
+- Bridge WASM en `js_wasm.go`.
+- Tests de API en `tests/wasm_exec_test.go` y `tests/script_test.go`.
+- Tests de sincronización en `tests/wasm_exec_sync_test.go` (aquí está el bug).
+- `README.md` completo.
 
-## Solution
+## Problema
 
-Keep the `//go:embed` files as the source of truth. Add a version annotation on line 1 of
-each asset, a `go:generate` script that downloads and replaces the assets, and a sync test
-that auto-updates assets on disk when versions diverge (requiring a second `gotest` run to
-confirm).
+`gotest ./...` en `tinywasm/js/tests/wasm_exec_sync_test.go` termina con:
 
-## Implementation
+```
+panic: test timed out after 30s
+running tests: TestWasmExecTinyGoInSync (30s)
+```
 
-### Step 1 — Version annotations
+**Causa raíz:** `TestWasmExecTinyGoInSync` y `TestWasmExecGoInSync` descargan
+el tarball completo de la release (TinyGo: ~170 MB; Go source: ~30 MB) de forma
+**incondicional**, incluso cuando la anotación de versión en el asset ya coincide
+con `tinygo.DefaultVersion` / versión en `go.mod`. La descarga ocurre antes del
+check, y 30 s no es suficiente.
 
-Prepend a version comment to the first line of each asset file:
+## Fix requerido
 
-`js/assets/wasm_exec_tinygo.js` → first line: `// @tinygo-version 0.40.1`  
-`js/assets/wasm_exec_go.js` → first line: `// @go-version 1.24.3`  (use the actual Go version from `js/go.mod`)
+**Archivo:** `tests/wasm_exec_sync_test.go`
 
-### Step 2 — `go generate` script
+**Regla:** si la anotación de versión embebida ya coincide con la versión
+objetivo (`have == want`), el test **pasa sin descarga**. Solo descargar cuando
+hay divergencia de versión, para actualizar el asset en disco (comportamiento
+actual de auto-update).
 
-Create `js/scripts/update_wasm_exec.go` (build tag `//go:build ignore`).
+El hash-check puede eliminarse: la integridad del contenido la garantiza el
+script `go generate`; la sync-test solo guarda contra "cambiaste DefaultVersion
+sin correr generate".
 
-The script must:
+### `TestWasmExecTinyGoInSync` — lógica corregida
 
-1. Read `tinygo.DefaultVersion` from `github.com/tinywasm/tinygo` to get the target TinyGo version.
-2. Download the TinyGo release archive for that version:
-   `https://github.com/tinygo-org/tinygo/releases/download/v{ver}/tinygo{ver}.linux-amd64.tar.gz`
-3. Extract `tinygo/targets/wasm_exec.js` from the archive.
-4. Prepend `// @tinygo-version {ver}\n` and write to `js/assets/wasm_exec_tinygo.js`.
-5. Read the Go version from `js/go.mod` (the `go X.Y` directive).
-6. Download the Go source archive: `https://go.dev/dl/go{ver}.src.tar.gz`
-7. Extract `go/misc/wasm/wasm_exec.js` from the archive.
-8. Prepend `// @go-version {ver}\n` and write to `js/assets/wasm_exec_go.js`.
-
-Add to `js/js.go` (or a dedicated `js/generate.go`):
 ```go
-//go:generate go run scripts/update_wasm_exec.go
+func TestWasmExecTinyGoInSync(t *testing.T) {
+    if testing.Short() {
+        t.Skip("skipping in short mode")
+    }
+
+    want := tinygo.DefaultVersion
+    data, err := os.ReadFile("../assets/wasm_exec_tinygo.js")
+    if err != nil {
+        t.Fatalf("failed to read asset: %v", err)
+    }
+
+    lines := strings.SplitN(string(data), "\n", 2)
+    have := ""
+    if strings.HasPrefix(lines[0], "// @tinygo-version ") {
+        have = strings.TrimSpace(lines[0][len("// @tinygo-version "):])
+    }
+
+    // Si la versión ya coincide → el asset está al día. No descargar.
+    if have == want {
+        return
+    }
+
+    // Versiones divergen → descargar y actualizar el asset en disco.
+    url := fmt.Sprintf(
+        "https://github.com/tinygo-org/tinygo/releases/download/v%s/tinygo%s.linux-amd64.tar.gz",
+        want, want,
+    )
+    remoteData, err := downloadAndExtract(url, "tinygo/targets/wasm_exec.js")
+    if err != nil {
+        t.Fatalf("failed to download remote version: %v", err)
+    }
+    newContent := fmt.Sprintf("// @tinygo-version %s\n%s", want, string(remoteData))
+    if err := os.WriteFile("../assets/wasm_exec_tinygo.js", []byte(newContent), 0644); err != nil {
+        t.Fatalf("failed to update asset: %v", err)
+    }
+    t.Fatalf("wasm_exec_tinygo.js updated %s -> %s. Re-run: gotest ./...", have, want)
+}
 ```
 
-### Step 3 — Sync test with auto-update
+### `TestWasmExecGoInSync` — misma lógica
 
-Create `js/tests/wasm_exec_sync_test.go`.
+```go
+func TestWasmExecGoInSync(t *testing.T) {
+    if testing.Short() {
+        t.Skip("skipping in short mode")
+    }
 
-**`TestWasmExecAnnotationPresent`** (no network, always runs):
-- Read `wasmExecTinyGoSource` and `wasmExecGoSource` via the exported embed accessors or
-  by reading the asset files from disk relative to the test file.
-- Assert the first line of each file matches `// @tinygo-version ` and `// @go-version `
-  respectively. Fail immediately if missing.
+    want, err := getGoVersion()
+    if err != nil {
+        t.Fatalf("failed to get go version: %v", err)
+    }
 
-**`TestWasmExecTinyGoInSync`** (requires network, skip with `-short`):
-1. Parse `tinygo.DefaultVersion` → `want`.
-2. Parse the annotation in `wasm_exec_tinygo.js` → `have`.
-3. If `have == want`, compute SHA-256 of the embed content (after stripping the annotation
-   line) and compare with the SHA-256 of `targets/wasm_exec.js` inside the TinyGo release
-   archive for `want`. If equal → pass.
-4. If versions differ **or** hashes differ:
-   - Download and extract `targets/wasm_exec.js` from the TinyGo `want` release archive.
-   - Write `// @tinygo-version {want}\n{content}` to `../assets/wasm_exec_tinygo.js`
-     (path relative to the test file).
-   - Call `t.Fatalf("wasm_exec_tinygo.js updated %s → %s. Re-run: gotest ./...", have, want)`.
+    data, err := os.ReadFile("../assets/wasm_exec_go.js")
+    if err != nil {
+        t.Fatalf("failed to read asset: %v", err)
+    }
 
-**`TestWasmExecGoInSync`** (requires network, skip with `-short`):
-- Same logic as above but:
-  - Source of truth: `go` directive in `js/go.mod` (parse with `go/modfile` or simple string scan).
-  - Remote file: `go/misc/wasm/wasm_exec.js` inside `https://go.dev/dl/go{ver}.src.tar.gz`.
-  - Asset: `../assets/wasm_exec_go.js`.
-  - Annotation: `// @go-version {ver}`.
+    lines := strings.SplitN(string(data), "\n", 2)
+    have := ""
+    if strings.HasPrefix(lines[0], "// @go-version ") {
+        have = strings.TrimSpace(lines[0][len("// @go-version "):])
+    }
 
-### Step 4 — README update
+    // Si la versión ya coincide → el asset está al día. No descargar.
+    if have == want {
+        return
+    }
 
-Add a section "Updating wasm_exec.js" to `js/README.md`:
-
-```
-## Updating wasm_exec.js
-
-When TinyGo or Go releases a new version:
-
-1. Update `DefaultVersion` in `tinywasm/tinygo/tinygo.go` (for TinyGo).
-   For Go, update the `go` directive in `js/go.mod`.
-2. Run: go generate ./...
-3. Run: gotest ./...   (first run updates assets if generate was skipped; second run must pass)
-4. Publish: gopush (tinywasm/tinygo first, then tinywasm/js)
+    // Versiones divergen → descargar y actualizar.
+    url := fmt.Sprintf("https://go.dev/dl/go%s.src.tar.gz", want)
+    remoteData, err := downloadAndExtract(url, "go/lib/wasm/wasm_exec.js")
+    if err != nil {
+        t.Fatalf("failed to download remote version: %v", err)
+    }
+    newContent := fmt.Sprintf("// @go-version %s\n%s", want, string(remoteData))
+    if err := os.WriteFile("../assets/wasm_exec_go.js", []byte(newContent), 0644); err != nil {
+        t.Fatalf("failed to update asset: %v", err)
+    }
+    t.Fatalf("wasm_exec_go.js updated %s -> %s. Re-run: gotest ./...", have, want)
+}
 ```
 
-## Tests summary
+## Verificación
 
-| Test | Network | Behaviour on failure |
-|---|---|---|
-| `TestWasmExecAnnotationPresent` | No | FAIL — annotation missing or malformed |
-| `TestWasmExecTinyGoInSync` | Yes (skip `-short`) | Auto-updates asset on disk + FAIL with re-run instruction |
-| `TestWasmExecGoInSync` | Yes (skip `-short`) | Auto-updates asset on disk + FAIL with re-run instruction |
+```bash
+gotest ./...
+```
+
+Deben pasar los 5 tests sin timeout:
+- `TestWasmExecAnnotationPresent` — verifica anotaciones (sin red)
+- `TestWasmExecTinyGoInSync` — early-return porque 0.41.1 == 0.41.1
+- `TestWasmExecGoInSync` — early-return porque 1.25.2 == 1.25.2
+- `TestPageBootstrap_IsBundleScript`, `TestPageBootstrap_ReferencesClientWasm`, etc.
+
+## Publicar
+
+Una vez `gotest ./...` verde:
+
+```bash
+gopush
+```
 
 ## Stages
 
-### Phase 1 — Infrastructure (tinywasm/js)
-
-| # | Task | Done |
+| # | Tarea | Done |
 |---|---|---|
-| 1 | Prepend `// @tinygo-version 0.40.1` to `js/assets/wasm_exec_tinygo.js` and `// @go-version X.Y.Z` to `js/assets/wasm_exec_go.js` (use the Go version from `js/go.mod`) | [ ] |
-| 2 | Write `js/scripts/update_wasm_exec.go` (download + extract + annotate both assets) | [ ] |
-| 3 | Add `//go:generate go run scripts/update_wasm_exec.go` to `js/js.go` or a dedicated `js/generate.go` | [ ] |
-| 4 | Write `js/tests/wasm_exec_sync_test.go` with the three tests described above | [ ] |
-| 5 | Run `go generate ./...` inside `tinywasm/js` — verify output matches current assets (baseline) | [ ] |
-| 6 | Run `gotest ./...` inside `tinywasm/js` — first and second run must both pass | [ ] |
-| 7 | Update `js/README.md` with the update protocol section | [ ] |
-
-### Phase 2 — Upgrade to TinyGo 0.41.1 (end-to-end validation)
-
-| # | Task | Done |
-|---|---|---|
-| 8 | Install TinyGo 0.41.1 using the `tinywasm/tinygo` CLI: `sudo tinygoinstall -version 0.41.1 -v` | [ ] |
-| 9 | Verify installation: `tinygo version` must print `tinygo version 0.41.1 ...` | [ ] |
-| 10 | Update `DefaultVersion = "0.41.1"` in `tinywasm/tinygo/tinygo.go` | [ ] |
-| 11 | Run `gotest ./...` inside `tinywasm/tinygo` — must pass | [ ] |
-| 12 | If stage 11 passes: publish `tinywasm/tinygo` with `gopush` | [ ] |
-| 13 | Run `go generate ./...` inside `tinywasm/js` — assets must update to TinyGo 0.41.1 | [ ] |
-| 14 | Run `gotest ./...` inside `tinywasm/js` — second run must pass (first run will update + fail, second must pass) | [ ] |
-| 15 | If stage 14 passes: publish `tinywasm/js` with `gopush` | [ ] |
+| 1 | Aplicar el fix en `tests/wasm_exec_sync_test.go`: early-return cuando `have == want` en ambas funciones | [ ] |
+| 2 | `gotest ./...` verde — todos los tests pasan sin timeout ni red | [ ] |
+| 3 | `gopush` — publicar `tinywasm/js` | [ ] |
