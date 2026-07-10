@@ -5,7 +5,7 @@ go 1.25.2
 require (
 	github.com/tinywasm/context v0.0.18
 	github.com/tinywasm/fetch v0.1.24
-	github.com/tinywasm/fmt v0.25.1
+	github.com/tinywasm/fmt v0.25.2
 )
 
 require github.com/tinywasm/tinygo v0.0.11
