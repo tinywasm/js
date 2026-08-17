@@ -19,7 +19,7 @@ flowchart TD
     SW --> S2["*Script{Name: 'sw.js'}\n→ standalone /sw.js"]
     WW --> S3["*Script{Name: name}\n→ standalone /name"]
 
-    S1 --> AM["assetmin\nContent final — escribe a disco"]
+    S1 --> AM["sitec\nContent final — escribe a disco"]
     S2 --> AM
     S3 --> AM
 ```
@@ -62,9 +62,8 @@ El shim detecta el contexto vía `self.constructor.name` para evitar ejecutar c�
 | Paquete | Responsabilidad |
 |---|---|
 | `tinywasm/js` | Composición JS (shims, embeds, constructores tipados). **Única fuente de wasm_exec.js** |
-| `tinywasm/client` | Compilación WASM (Go/TinyGo), serving `/client.wasm`. **Sin JS** |
-| `tinywasm/app` | Orquestación: llama `js.SetRuntime`, registra `js.PageBootstrap()` con assetmin |
-| `assetmin` | Bundling: recibe `[]*js.Script` con `Content` final, escribe a disco |
+| `tinywasm/app` | Orquestación: llama `js.SetRuntime`, registra `js.PageBootstrap()` con `sitec` |
+| `tinywasm/sitec` | Compilación WASM (Go/TinyGo) vía `WasmBuilder`, y bundling: recibe `[]*js.Script` con `Content` final y escribe a disco. **Sin JS propio** |
 
 ## Registro de handlers (lado WASM)
 
@@ -92,7 +91,7 @@ flowchart LR
 
 ## Decisiones clave
 
-- **`activeRuntime` es estado global write-once**: `app` lo escribe una vez al boot antes de que los módulos llamen `RenderJS()`. El extractor SSR de assetmin corre en el mismo proceso → ve el global. Sin parámetros para el usuario.
-- **`Content` es string final**: `assetmin` lo escribe tal cual. Sin interfaces extra, sin resolución diferida. Idéntico al modelo de `tinywasm/css`.
+- **`activeRuntime` es estado global write-once**: `app` lo escribe una vez al boot antes de que los módulos llamen `RenderJS()`. El extractor SSR de sitec corre en el mismo proceso → ve el global. Sin parámetros para el usuario.
+- **`Content` es string final**: `sitec` lo escribe tal cual. Sin interfaces extra, sin resolución diferida. Idéntico al modelo de `tinywasm/css`.
 - **Sin `wasm_exec.js` en disco**: el archivo se inlinea en cada shim. No hay ruta `/wasm_exec.js` pública.
 - **`client/assets/` eliminado**: `js/assets/` es la única fuente de verdad. Un solo lugar a actualizar cuando Go o TinyGo publican nuevas versiones del runtime.

@@ -7,7 +7,7 @@ Typed layer for Service Workers and Web Workers in TinyWASM.
 
 ## Overview
 
-`tinywasm/js` is the **only JS API** in the TinyWASM framework — mirroring what `tinywasm/css` does for stylesheets. SSR modules call typed constructors returning `*Script` values with final JS content; `assetmin` writes them to disk without additional coordination.
+`tinywasm/js` is the **only JS API** in the TinyWASM framework — mirroring what `tinywasm/css` does for stylesheets. SSR modules call typed constructors returning `*Script` values with final JS content; `sitec` writes them to disk without additional coordination.
 
 ## API
 
