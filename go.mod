@@ -8,4 +8,4 @@ require (
 	github.com/tinywasm/fmt v0.25.7
 )
 
-require github.com/tinywasm/tinygo v0.0.11
+require github.com/tinywasm/tinygo v1.0.0
